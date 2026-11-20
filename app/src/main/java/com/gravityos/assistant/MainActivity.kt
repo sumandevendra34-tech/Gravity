@@ -154,21 +154,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun buildPermissionSnapshot(): PermissionSnapshot {
-        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-        val storageOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            true
+    private fun isAccessibilityEnabled(): Boolean {
+        if (GravityAccessibilityService.isRunning()) return true
+        val fullName = "$packageName/${GravityAccessibilityService::class.java.name}"
+        val shortName = "$packageName/.core.GravityAccessibilityService"
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        return enabled.split(':').any {
+            it.equals(fullName, ignoreCase = true) || it.equals(shortName, ignoreCase = true)
         }
+    }
 
-        return PermissionSnapshot(
-            micGranted = isGranted(Manifest.permission.RECORD_AUDIO),
-            contactsGranted = isGranted(Manifest.permission.READ_CONTACTS),
-            callGranted = isGranted(Manifest.permission.CALL_PHONE),
-            cameraGranted = isGranted(Manifest.permission.CAMERA),
-            overlayGranted = Settings.canDrawOverlays(this),
-            batteryUnrestricted = pm.isIgnoringBatteryOptimizations(packageName),
-            accessibilityGranted = isAccessibilityEnabled(),
-            storageGranted = storageOk
-        )
+    private fun isGranted(permission: String): Boolean {
+        return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+    }
+}
