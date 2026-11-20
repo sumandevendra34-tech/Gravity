@@ -18,16 +18,22 @@ class CommandRouter(
 ) {
 
     fun processCommand(rawInput: String, pendingAction: PendingAction?): CommandResult {
-        val cleaned = rawInput
+        val transliterated = if (HindiTransliterator.containsDevanagari(rawInput)) {
+            HindiTransliterator.transliterate(rawInput)
+        } else {
+            rawInput
+        }
+
+        val cleaned = transliterated
             .trim()
-            .replace(Regex("^(hey\\s+gravity|gravity|ओके\\s+ग्रैविटी|हे\\s+ग्रैविटी|ग्रैविटी)[,\\s]*", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("^(hey\\s+gravity|ok\\s+gravity|gravity)[,\\s]*", RegexOption.IGNORE_CASE), "")
             .trim()
 
         if (cleaned.isEmpty()) {
             return CommandResult("Boliye, main sun raha hoon.")
         }
 
-        // 1. Handle active confirmation first ("haan", "yes", "1", "2", "cancel", or contact name)
+        // 1. Pending confirmation check ("haan", "yes", "1", "2", "cancel", ya contact name)
         if (pendingAction != null) {
             val confirmationResult = handlePendingConfirmation(cleaned, pendingAction)
             if (confirmationResult != null) return confirmationResult
@@ -36,37 +42,37 @@ class CommandRouter(
         val lower = cleaned.lowercase()
 
         // 2. Torch / Flashlight commands
-        if (lower.contains("torch") || lower.contains("flashlight") || lower.contains("flash light") || lower.contains("टॉर्च")) {
+        if (lower.contains("torch") || lower.contains("flashlight") || lower.contains("flash light")) {
             return when {
-                lower.contains("band") || lower.contains("off") || lower.contains("close") || lower.contains("बंद") ->
+                lower.contains("band") || lower.contains("off") || lower.contains("close") ->
                     CommandResult(phoneControlManager.setTorch(false))
-                lower.contains("chalu") || lower.contains("on") || lower.contains("start") || lower.contains("jalao") || lower.contains("चालू") ->
+                lower.contains("chalu") || lower.contains("on") || lower.contains("start") || lower.contains("jalao") ->
                     CommandResult(phoneControlManager.setTorch(true))
                 else -> CommandResult(phoneControlManager.toggleTorch())
             }
         }
 
         // 3. Volume commands
-        if (lower.contains("volume") || lower.contains("awaz") || lower.contains("aawaz") || lower.contains("sound") || lower.contains("आवाज") || lower.contains("वॉल्यूम")) {
+        if (lower.contains("volume") || lower.contains("awaz") || lower.contains("aawaz") || lower.contains("sound")) {
             return when {
-                lower.contains("mute") || lower.contains("band") || lower.contains("silent") || lower.contains("म्यूट") ->
+                lower.contains("mute") || lower.contains("band") || lower.contains("silent") ->
                     CommandResult(phoneControlManager.muteVolume())
                 lower.contains("full") || lower.contains("max") || lower.contains("100") ->
                     CommandResult(phoneControlManager.setVolumeMax())
-                lower.contains("kam") || lower.contains("down") || lower.contains("low") || lower.contains("ghata") || lower.contains("कम") ->
+                lower.contains("kam") || lower.contains("down") || lower.contains("low") || lower.contains("ghata") ->
                     CommandResult(phoneControlManager.decreaseVolume())
                 else -> CommandResult(phoneControlManager.increaseVolume())
             }
         }
 
-        // 4. System Settings shortcuts (Wi-Fi, Bluetooth, Hotspot, Display)
-        if (lower.contains("hotspot") || lower.contains("tether") || lower.contains("हॉटस्पॉट")) {
+        // 4. System Settings shortcuts
+        if (lower.contains("hotspot") || lower.contains("tether")) {
             return CommandResult(phoneControlManager.openHotspotSettings())
         }
-        if (lower.contains("wifi") || lower.contains("wi-fi") || lower.contains("वाईफाई") || lower.contains("internet setting")) {
+        if (lower.contains("wifi") || lower.contains("wi-fi") || lower.contains("internet setting")) {
             return CommandResult(phoneControlManager.openWifiSettings())
         }
-        if (lower.contains("bluetooth") || lower.contains("ब्लूटूथ")) {
+        if (lower.contains("bluetooth")) {
             return CommandResult(phoneControlManager.openBluetoothSettings())
         }
         if (lower.contains("display setting") || lower.contains("brightness") || lower.contains("screen setting")) {
@@ -74,16 +80,16 @@ class CommandRouter(
         }
 
         // 5. Camera command
-        if (lower == "camera" || lower.contains("camera kholo") || lower.contains("open camera") || lower.contains("camera open") || lower.contains("कैमरा")) {
+        if (lower == "camera" || lower.contains("camera kholo") || lower.contains("open camera") || lower.contains("camera open")) {
             return CommandResult(phoneControlManager.openCamera())
         }
 
-        // 6. Direct Call commands (Hindi + English + Hinglish)
+        // 6. Direct Call commands
         val callTarget = extractCallTarget(cleaned)
         if (callTarget != null) {
             return when (val res = contactCallManager.resolveAndCall(callTarget)) {
                 is CallResolution.DirectCalled ->
-                    CommandResult("${res.contact.name} ko call laga raha hoon...")
+                    CommandResult("${res.contact.name} ko call laga raha hoon.")
                 is CallResolution.AskConfirmation ->
                     CommandResult(res.message, pendingAction = PendingAction.CallOptions(res.candidates))
                 is CallResolution.PermissionRequired ->
@@ -109,9 +115,9 @@ class CommandRouter(
             }
         }
 
-        // 8. Non-command conversational query (Phase 4 me Groq/Gemini + Offline LLM yahan connect hoga)
+        // 8. Conversational query (Step 4 me Groq/Gemini Online AI + Offline Local LLM yahan connect hoga)
         return CommandResult(
-            reply = "Mainne aapka message padha: \"$cleaned\".\nAbhi Phase 1-2 me Phone Commands (Call, Koi bhi App kholna, Torch, Volume, Settings) active hain. Step 3 me Offline Voice + Wake Word aur Step 4 me Groq/Gemini Online AI + Offline LLM jud jayega.",
+            reply = "Aapne kaha: \"$rawInput\". Phone commands aur voice active hain; AI chat brain (Groq, Gemini aur Offline LLM) Step 4 me judega.",
             handledLocally = false
         )
     }
@@ -119,13 +125,12 @@ class CommandRouter(
     private fun handlePendingConfirmation(input: String, pending: PendingAction): CommandResult? {
         val lower = input.lowercase().trim()
 
-        // Cancel keywords
-        if (lower in listOf("nahi", "no", "cancel", "rehne do", "mat karo", "stop", "band karo", "नहीं")) {
+        if (lower in listOf("nahi", "no", "cancel", "rehne do", "mat karo", "stop", "band karo")) {
             return CommandResult("Theek hai, cancel kar diya.")
         }
 
         val chosenIndex: Int? = when {
-            lower in listOf("haan", "ha", "han", "yes", "ok", "okay", "ji", "karo", "laga do", "khol do", "1", "pehla", "first", "ek", "हाँ") -> 0
+            lower in listOf("haan", "ha", "han", "yes", "ok", "okay", "ji", "karo", "laga do", "khol do", "1", "pehla", "first", "ek") -> 0
             lower in listOf("2", "dusra", "doosra", "second", "do") -> 1
             lower in listOf("3", "teesra", "third", "teen") -> 2
             lower in listOf("4", "chautha", "fourth", "char") -> 3
@@ -142,7 +147,7 @@ class CommandRouter(
                 }
                 if (chosen != null) {
                     when (val res = contactCallManager.placeCall(chosen)) {
-                        is CallResolution.DirectCalled -> CommandResult("${res.contact.name} ko call laga raha hoon...")
+                        is CallResolution.DirectCalled -> CommandResult("${res.contact.name} ko call laga raha hoon.")
                         is CallResolution.PermissionRequired -> CommandResult(res.message)
                         else -> CommandResult("Call lagane me dikkat aayi.")
                     }
@@ -170,9 +175,9 @@ class CommandRouter(
         val patterns = listOf(
             Regex("^call\\s+(?:to\\s+)?(.+)$", RegexOption.IGNORE_CASE),
             Regex("^dial\\s+(.+)$", RegexOption.IGNORE_CASE),
-            Regex("^phone\\s+(?:lagao|karo)\\s+(.+)$", RegexOption.IGNORE_CASE),
-            Regex("^(.+?)\\s+(?:ko|pe|par)\\s+(?:call|phone|फोने|कॉल)(?:\\s+(?:karo|lagao|laga\\s+do|kar\\s+do|करो|लगाओ))?$", RegexOption.IGNORE_CASE),
-            Regex("^(.+?)\\s+(?:call|कॉल)\\s+(?:karo|lagao|laga\\s+do|kar\\s+do|करो|लगाओ)$", RegexOption.IGNORE_CASE)
+            Regex("^phone\\s+(?:lagao|karo|laga\\s+do)\\s+(.+)$", RegexOption.IGNORE_CASE),
+            Regex("^(.+?)\\s+(?:ko|pe|par)\\s+(?:call|phone)(?:\\s+(?:karo|lagao|laga\\s+do|kar\\s+do))?$", RegexOption.IGNORE_CASE),
+            Regex("^(.+?)\\s+(?:call|phone)\\s+(?:karo|lagao|laga\\s+do|kar\\s+do)$", RegexOption.IGNORE_CASE)
         )
         for (regex in patterns) {
             val match = regex.find(input)
@@ -187,7 +192,7 @@ class CommandRouter(
     private fun extractAppTarget(input: String): String? {
         val patterns = listOf(
             Regex("^(?:open|launch|start|run)\\s+(.+?)(?:\\s+app)?$", RegexOption.IGNORE_CASE),
-            Regex("^(.+?)\\s+(?:app\\s+)?(?:kholo|khol\\s+do|open\\s+karo|chalao|chalu\\s+karo|launch\\s+karo|खोलो|चलाओ)$", RegexOption.IGNORE_CASE)
+            Regex("^(.+?)\\s+(?:app\\s+)?(?:kholo|khol\\s+do|khol|open\\s+karo|chalao|chalu\\s+karo|launch\\s+karo)$", RegexOption.IGNORE_CASE)
         )
         for (regex in patterns) {
             val match = regex.find(input)
