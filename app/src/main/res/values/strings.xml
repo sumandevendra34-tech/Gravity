@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">GRAVITY OS</string>
+    <string name="accessibility_service_description">Allows GRAVITY OS to type your spoken words offline into Google, WhatsApp, and any active text box on your screen.</string>
 </resources>
