@@ -12,8 +12,8 @@ android {
         applicationId = "com.gravityos.assistant"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0-phase1"
+        versionCode = 2
+        versionName = "1.1.0-phase3-voice"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -52,6 +52,9 @@ android {
 }
 
 dependencies {
+    // Automatically loads sherpa-onnx.aar when placed in app/libs/
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
