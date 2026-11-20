@@ -51,11 +51,16 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.Hearing
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -80,9 +85,10 @@ import com.gravityos.assistant.core.PendingAction
 import com.gravityos.assistant.ui.components.GravityOrb
 import com.gravityos.assistant.ui.components.OrbState
 import com.gravityos.assistant.ui.theme.GravityColors
-import com.gravityos.assistant.viewmodel.ChatMessage
 import com.gravityos.assistant.viewmodel.GravityScreen
 import com.gravityos.assistant.viewmodel.GravityUiState
+import com.gravityos.assistant.voice.ChatMessage
+import java.util.Locale
 
 data class PermissionSnapshot(
     val micGranted: Boolean,
@@ -102,8 +108,12 @@ fun GravityRootHost(
     onInputChange: (String) -> Unit,
     onSubmit: (String?) -> Unit,
     onOrbTap: () -> Unit,
+    onToggleWakeWord: () -> Unit,
     onCancelPending: () -> Unit,
     onClearChat: () -> Unit,
+    onSetVoiceSpeed: (Float) -> Unit,
+    onReloadOfflineModels: () -> Unit,
+    onTestNeuralVoice: () -> Unit,
     onRequestRuntimePermissions: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
     onRequestBatteryOptimization: () -> Unit,
@@ -124,6 +134,7 @@ fun GravityRootHost(
                 onInputChange = onInputChange,
                 onSubmit = onSubmit,
                 onOrbTap = onOrbTap,
+                onToggleWakeWord = onToggleWakeWord,
                 onCancelPending = onCancelPending
             )
 
@@ -141,6 +152,10 @@ fun GravityRootHost(
                 uiState = uiState,
                 permissions = permissions,
                 onBack = { onNavigate(GravityScreen.HOME) },
+                onToggleWakeWord = onToggleWakeWord,
+                onSetVoiceSpeed = onSetVoiceSpeed,
+                onReloadOfflineModels = onReloadOfflineModels,
+                onTestNeuralVoice = onTestNeuralVoice,
                 onRequestRuntimePermissions = onRequestRuntimePermissions,
                 onRequestOverlayPermission = onRequestOverlayPermission,
                 onRequestBatteryOptimization = onRequestBatteryOptimization,
@@ -160,6 +175,7 @@ private fun GravityHomeScreen(
     onInputChange: (String) -> Unit,
     onSubmit: (String?) -> Unit,
     onOrbTap: () -> Unit,
+    onToggleWakeWord: () -> Unit,
     onCancelPending: () -> Unit
 ) {
     val allCoreReady = permissions.micGranted && permissions.contactsGranted && permissions.callGranted
@@ -186,7 +202,7 @@ private fun GravityHomeScreen(
                 )
         )
 
-        // Iconic Bottom Glowing Blue Horizon Aura (matching reference design)
+        // Bottom Glowing Blue Horizon Aura
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -213,7 +229,7 @@ private fun GravityHomeScreen(
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Top bar
+            // Top bar with Hands-Free Wake Word toggle pill
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -222,12 +238,16 @@ private fun GravityHomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    onClick = onOpenSetup,
+                    onClick = if (allCoreReady) onToggleWakeWord else onOpenSetup,
                     shape = RoundedCornerShape(50),
-                    color = GravityColors.GlassSurface,
+                    color = if (uiState.isWakeServiceRunning) Color(0xAA0E2C5E) else GravityColors.GlassSurface,
                     border = BorderStroke(
                         1.dp,
-                        if (allCoreReady) GravityColors.GlassBorder else GravityColors.WarningAmber.copy(alpha = 0.6f)
+                        when {
+                            !allCoreReady -> GravityColors.WarningAmber.copy(alpha = 0.6f)
+                            uiState.isWakeServiceRunning -> GravityColors.ElectricCyan
+                            else -> GravityColors.GlassBorder
+                        }
                     )
                 ) {
                     Row(
@@ -238,11 +258,21 @@ private fun GravityHomeScreen(
                             modifier = Modifier
                                 .size(8.dp)
                                 .clip(CircleShape)
-                                .background(if (allCoreReady) GravityColors.SuccessGreen else GravityColors.WarningAmber)
+                                .background(
+                                    when {
+                                        !allCoreReady -> GravityColors.WarningAmber
+                                        uiState.isWakeServiceRunning -> GravityColors.SuccessGreen
+                                        else -> GravityColors.TextSecondary
+                                    }
+                                )
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (allCoreReady) "GRAVITY OS" else "Setup Permissions",
+                            text = when {
+                                !allCoreReady -> "Setup Permissions"
+                                uiState.isWakeServiceRunning -> "Hey Gravity • ON"
+                                else -> "Wake Word • OFF"
+                            },
                             color = GravityColors.TextPrimary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
@@ -266,7 +296,7 @@ private fun GravityHomeScreen(
 
             Spacer(modifier = Modifier.weight(0.9f))
 
-            // Central Animated 60 FPS Motion Graphic Orb
+            // Central 60 FPS Motion Graphic Orb driven by live microphone / neural TTS amplitude
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.clickable(onClick = onOrbTap)
@@ -274,7 +304,7 @@ private fun GravityHomeScreen(
                 GravityOrb(
                     state = uiState.orbState,
                     size = 240.dp,
-                    voiceAmplitude = if (uiState.orbState == OrbState.LISTENING) 0.55f else 0f
+                    voiceAmplitude = uiState.voiceAmplitude
                 )
             }
 
@@ -284,7 +314,8 @@ private fun GravityHomeScreen(
                 text = uiState.statusSubtitle,
                 color = GravityColors.TextSecondary,
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -303,7 +334,7 @@ private fun GravityHomeScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Smart Ask / Disambiguation Card when Gravity has a doubt or multiple options
+            // Smart Ask / Disambiguation Card
             AnimatedVisibility(
                 visible = uiState.pendingAction != null,
                 enter = slideInVertically { it / 2 } + fadeIn(),
@@ -318,7 +349,6 @@ private fun GravityHomeScreen(
                 }
             }
 
-            // Quick test command chips when no confirmation pending
             if (uiState.pendingAction == null) {
                 Row(
                     modifier = Modifier
@@ -352,7 +382,7 @@ private fun GravityHomeScreen(
                 }
             }
 
-            // Signature Glowing Bottom Frosted Input Bar ("Ask anything...")
+            // Glowing Bottom Frosted Input Bar ("Ask anything...")
             GlowingAskBar(
                 value = uiState.inputText,
                 onValueChange = onInputChange,
@@ -405,7 +435,6 @@ private fun GravityChatScreen(
                 .navigationBarsPadding()
                 .imePadding()
         ) {
-            // Chat Top Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -427,7 +456,7 @@ private fun GravityChatScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "Commands & Assistant",
+                        text = if (uiState.isWakeServiceRunning) "Voice & Wake Word Active" else "Offline Commands Ready",
                         color = GravityColors.ElectricCyan,
                         fontSize = 11.sp
                     )
@@ -440,7 +469,6 @@ private fun GravityChatScreen(
                 )
             }
 
-            // Messages List
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -457,7 +485,6 @@ private fun GravityChatScreen(
                 }
             }
 
-            // Pending confirmation chips inside Chat too
             uiState.pendingAction?.let { pending ->
                 Box(modifier = Modifier.padding(horizontal = 16.dp)) {
                     PendingConfirmationCard(
@@ -547,6 +574,10 @@ private fun GravitySetupScreen(
     uiState: GravityUiState,
     permissions: PermissionSnapshot,
     onBack: () -> Unit,
+    onToggleWakeWord: () -> Unit,
+    onSetVoiceSpeed: (Float) -> Unit,
+    onReloadOfflineModels: () -> Unit,
+    onTestNeuralVoice: () -> Unit,
     onRequestRuntimePermissions: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
     onRequestBatteryOptimization: () -> Unit,
@@ -581,15 +612,98 @@ private fun GravitySetupScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Android 15 Permissions & Offline Model Storage",
+                    text = "Voice Engines, Permissions & Manual Storage",
                     color = GravityColors.TextSecondary,
                     fontSize = 12.sp
                 )
             }
         }
 
-        // Runtime Permissions Card
-        SectionCard(title = "1. Core Permissions (Voice, Calls, Contacts, Camera)") {
+        // Section 1: Offline Voice, Wake Word & Neural TTS Control
+        SectionCard(title = "1. Offline Voice & Wake Word Engines (No System TTS)") {
+            StatusRow("Sherpa-ONNX Engine (app/libs)", uiState.diagnostics.sherpaAarLoaded)
+            DiagnosticStatusRow("Wake Word (\"Gravity\")", uiState.diagnostics.wakeWordReady, uiState.diagnostics.wakeWordStatus)
+            DiagnosticStatusRow("Offline Speech Recognition (STT)", uiState.diagnostics.sttReady, uiState.diagnostics.sttStatus)
+            DiagnosticStatusRow("Offline Neural Voice (TTS)", uiState.diagnostics.ttsReady, uiState.diagnostics.ttsStatus)
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Neural Voice Speed", color = GravityColors.TextPrimary, fontSize = 13.sp)
+                Text(
+                    text = String.format(Locale.US, "%.2fx", uiState.voiceSpeed),
+                    color = GravityColors.ElectricCyan,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Slider(
+                value = uiState.voiceSpeed,
+                onValueChange = onSetVoiceSpeed,
+                valueRange = 0.7f..1.4f,
+                colors = SliderDefaults.colors(
+                    thumbColor = GravityColors.ElectricCyan,
+                    activeTrackColor = GravityColors.PlasmaBlue
+                )
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Button(
+                onClick = onToggleWakeWord,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (uiState.isWakeServiceRunning) Color(0xFFB91C1C) else GravityColors.ElectricCyan
+                ),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Hearing,
+                    contentDescription = null,
+                    tint = if (uiState.isWakeServiceRunning) Color.White else GravityColors.ObsidianBg,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (uiState.isWakeServiceRunning) "Stop Background \"Gravity\" Listener" else "Start Background \"Gravity\" Listener",
+                    color = if (uiState.isWakeServiceRunning) Color.White else GravityColors.ObsidianBg,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onReloadOfflineModels,
+                    colors = ButtonDefaults.buttonColors(containerColor = GravityColors.DeepCobalt),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Rounded.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Reload Models", color = Color.White, fontSize = 12.sp)
+                }
+                Button(
+                    onClick = onTestNeuralVoice,
+                    colors = ButtonDefaults.buttonColors(containerColor = GravityColors.NebulaViolet),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Rounded.VolumeUp, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Test Voice", color = Color.White, fontSize = 12.sp)
+                }
+            }
+        }
+
+        // Section 2: Core Permissions
+        SectionCard(title = "2. Core Permissions (Voice, Calls, Contacts, Camera)") {
             StatusRow("Microphone (Wake Word & Voice)", permissions.micGranted)
             StatusRow("Contacts (Naam se Call)", permissions.contactsGranted)
             StatusRow("Direct Phone Call", permissions.callGranted)
@@ -605,10 +719,10 @@ private fun GravitySetupScreen(
             }
         }
 
-        // Background & Floating Orb Card
-        SectionCard(title = "2. Background Wake Word & Floating Orb (Android 15)") {
-            StatusRow("Display Over Other Apps (Floating Orb + Background App Open)", permissions.overlayGranted)
-            StatusRow("Battery Unrestricted (Door se 'Gravity' sunne ke liye)", permissions.batteryUnrestricted)
+        // Section 3: Android 15 Background & Floating Orb
+        SectionCard(title = "3. Background Wake Word & Floating Orb (Android 15)") {
+            StatusRow("Display Over Other Apps (Floating Orb + Background App Launch)", permissions.overlayGranted)
+            StatusRow("Battery Unrestricted (Far-Field Wake Word)", permissions.batteryUnrestricted)
             Spacer(modifier = Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
@@ -630,8 +744,8 @@ private fun GravitySetupScreen(
             }
         }
 
-        // Manual Offline Models Storage Card
-        SectionCard(title = "3. Manual Offline Models (Phone Storage)") {
+        // Section 4: Manual Offline Models Storage
+        SectionCard(title = "4. Manual Offline Models (Phone Storage)") {
             StatusRow("All Files Access (/GravityOS/models/)", permissions.storageGranted)
             Spacer(modifier = Modifier.height(6.dp))
             uiState.modelFolders.forEach { folder ->
@@ -676,6 +790,28 @@ private fun GravitySetupScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DiagnosticStatusRow(title: String, ready: Boolean, detail: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(title, color = GravityColors.TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(detail, color = GravityColors.TextSecondary, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(
+            imageVector = if (ready) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
+            contentDescription = null,
+            tint = if (ready) GravityColors.SuccessGreen else GravityColors.WarningAmber,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 
