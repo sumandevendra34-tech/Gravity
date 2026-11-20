@@ -28,6 +28,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.gravityos.assistant.core.GravityAccessibilityService
 import com.gravityos.assistant.ui.screens.GravityRootHost
 import com.gravityos.assistant.ui.screens.PermissionSnapshot
 import com.gravityos.assistant.ui.theme.GravityOSTheme
@@ -128,6 +129,9 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                         }
                     },
+                    onRequestAccessibilityPermission = {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    },
                     onRequestStoragePermission = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                             try {
@@ -165,11 +169,6 @@ class MainActivity : ComponentActivity() {
             cameraGranted = isGranted(Manifest.permission.CAMERA),
             overlayGranted = Settings.canDrawOverlays(this),
             batteryUnrestricted = pm.isIgnoringBatteryOptimizations(packageName),
+            accessibilityGranted = isAccessibilityEnabled(),
             storageGranted = storageOk
         )
-    }
-
-    private fun isGranted(permission: String): Boolean {
-        return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
-    }
-}
