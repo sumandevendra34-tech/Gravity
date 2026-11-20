@@ -52,6 +52,7 @@ import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Hearing
+import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VolumeUp
@@ -97,6 +98,7 @@ data class PermissionSnapshot(
     val cameraGranted: Boolean,
     val overlayGranted: Boolean,
     val batteryUnrestricted: Boolean,
+    val accessibilityGranted: Boolean,
     val storageGranted: Boolean
 )
 
@@ -117,6 +119,7 @@ fun GravityRootHost(
     onRequestRuntimePermissions: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
     onRequestBatteryOptimization: () -> Unit,
+    onRequestAccessibilityPermission: () -> Unit,
     onRequestStoragePermission: () -> Unit,
     onCreateModelFolders: () -> Unit
 ) {
@@ -159,6 +162,7 @@ fun GravityRootHost(
                 onRequestRuntimePermissions = onRequestRuntimePermissions,
                 onRequestOverlayPermission = onRequestOverlayPermission,
                 onRequestBatteryOptimization = onRequestBatteryOptimization,
+                onRequestAccessibilityPermission = onRequestAccessibilityPermission,
                 onRequestStoragePermission = onRequestStoragePermission,
                 onCreateModelFolders = onCreateModelFolders
             )
@@ -185,7 +189,6 @@ private fun GravityHomeScreen(
             .fillMaxSize()
             .background(GravityColors.ObsidianBg)
     ) {
-        // Upper ambient glow behind the Gravity Orb
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -202,7 +205,6 @@ private fun GravityHomeScreen(
                 )
         )
 
-        // Bottom Glowing Blue Horizon Aura
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -229,7 +231,6 @@ private fun GravityHomeScreen(
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Top bar with Hands-Free Wake Word toggle pill
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -296,7 +297,6 @@ private fun GravityHomeScreen(
 
             Spacer(modifier = Modifier.weight(0.9f))
 
-            // Central 60 FPS Motion Graphic Orb driven by live microphone / neural TTS amplitude
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.clickable(onClick = onOrbTap)
@@ -334,7 +334,6 @@ private fun GravityHomeScreen(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Smart Ask / Disambiguation Card
             AnimatedVisibility(
                 visible = uiState.pendingAction != null,
                 enter = slideInVertically { it / 2 } + fadeIn(),
@@ -382,7 +381,6 @@ private fun GravityHomeScreen(
                 }
             }
 
-            // Glowing Bottom Frosted Input Bar ("Ask anything...")
             GlowingAskBar(
                 value = uiState.inputText,
                 onValueChange = onInputChange,
@@ -581,6 +579,7 @@ private fun GravitySetupScreen(
     onRequestRuntimePermissions: () -> Unit,
     onRequestOverlayPermission: () -> Unit,
     onRequestBatteryOptimization: () -> Unit,
+    onRequestAccessibilityPermission: () -> Unit,
     onRequestStoragePermission: () -> Unit,
     onCreateModelFolders: () -> Unit
 ) {
@@ -612,7 +611,7 @@ private fun GravitySetupScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Voice Engines, Permissions & Manual Storage",
+                    text = "Voice Engines, Typing & Manual Storage",
                     color = GravityColors.TextSecondary,
                     fontSize = 12.sp
                 )
@@ -719,10 +718,11 @@ private fun GravitySetupScreen(
             }
         }
 
-        // Section 3: Android 15 Background & Floating Orb
-        SectionCard(title = "3. Background Wake Word & Floating Orb (Android 15)") {
+        // Section 3: Android 15 Background, Floating Orb & Offline Voice Typing
+        SectionCard(title = "3. Background, Floating Orb & Voice Typing (Android 15)") {
             StatusRow("Display Over Other Apps (Floating Orb + Background App Launch)", permissions.overlayGranted)
             StatusRow("Battery Unrestricted (Far-Field Wake Word)", permissions.batteryUnrestricted)
+            StatusRow("Voice Typing Anywhere (Accessibility Service)", permissions.accessibilityGranted)
             Spacer(modifier = Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(
@@ -741,6 +741,22 @@ private fun GravitySetupScreen(
                 ) {
                     Text("Battery", color = Color.White, fontSize = 13.sp)
                 }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = onRequestAccessibilityPermission,
+                colors = ButtonDefaults.buttonColors(containerColor = GravityColors.ElectricCyan),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Rounded.Keyboard, contentDescription = null, tint = GravityColors.ObsidianBg, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (permissions.accessibilityGranted) "Voice Typing Accessibility • ON" else "Enable Offline Voice Typing (Accessibility)",
+                    color = GravityColors.ObsidianBg,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
             }
         }
 
