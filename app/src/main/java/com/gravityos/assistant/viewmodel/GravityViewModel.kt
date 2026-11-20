@@ -3,23 +3,19 @@ package com.gravityos.assistant.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.gravityos.assistant.core.AppLauncherManager
-import com.gravityos.assistant.core.CommandRouter
-import com.gravityos.assistant.core.ContactCallManager
 import com.gravityos.assistant.core.ModelFolderStatus
 import com.gravityos.assistant.core.ModelStorageManager
 import com.gravityos.assistant.core.PendingAction
-import com.gravityos.assistant.core.PhoneControlManager
 import com.gravityos.assistant.ui.components.OrbState
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import com.gravityos.assistant.voice.ChatMessage
+import com.gravityos.assistant.voice.GravityVoiceHub
+import com.gravityos.assistant.voice.GravityVoiceService
+import com.gravityos.assistant.voice.VoiceEngineDiagnostics
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.util.UUID
 
 enum class GravityScreen {
     HOME,
@@ -27,52 +23,58 @@ enum class GravityScreen {
     SETUP
 }
 
-data class ChatMessage(
-    val id: String = UUID.randomUUID().toString(),
-    val text: String,
-    val isUser: Boolean,
-    val timestamp: Long = System.currentTimeMillis()
-)
-
 data class GravityUiState(
     val currentScreen: GravityScreen = GravityScreen.HOME,
     val orbState: OrbState = OrbState.IDLE,
+    val voiceAmplitude: Float = 0f,
+    val isWakeServiceRunning: Boolean = false,
     val inputText: String = "",
     val statusHeadline: String = "How can I help\nyou today?",
     val statusSubtitle: String = "Hello • Offline Core Ready",
     val latestReply: String? = null,
-    val messages: List<ChatMessage> = listOf(
-        ChatMessage(
-            text = "Main GRAVITY OS hoon. Mujhse koi bhi app khulwao, kisi bhi contact ko direct call lagwao, ya Torch/Volume/Settings control karo.",
-            isUser = false
-        )
-    ),
+    val messages: List<ChatMessage> = emptyList(),
     val pendingAction: PendingAction? = null,
+    val voiceSpeed: Float = 1.0f,
+    val diagnostics: VoiceEngineDiagnostics = VoiceEngineDiagnostics(),
     val modelFolders: List<ModelFolderStatus> = emptyList(),
     val hasAllFilesAccess: Boolean = false
 )
 
 class GravityViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val contactCallManager = ContactCallManager(application)
-    private val appLauncherManager = AppLauncherManager(application)
-    private val phoneControlManager = PhoneControlManager(application)
     private val modelStorageManager = ModelStorageManager()
-    private val commandRouter = CommandRouter(
-        contactCallManager = contactCallManager,
-        appLauncherManager = appLauncherManager,
-        phoneControlManager = phoneControlManager
-    )
 
     private val _uiState = MutableStateFlow(GravityUiState())
     val uiState: StateFlow<GravityUiState> = _uiState.asStateFlow()
 
     init {
+        GravityVoiceHub.ensureInitialized(application)
         refreshStorageStatus()
+
+        viewModelScope.launch {
+            GravityVoiceHub.state.collect { voice ->
+                _uiState.update { current ->
+                    current.copy(
+                        orbState = voice.orbState,
+                        voiceAmplitude = voice.voiceAmplitude,
+                        isWakeServiceRunning = voice.isWakeServiceRunning,
+                        statusSubtitle = voice.statusSubtitle,
+                        latestReply = voice.latestReply,
+                        messages = voice.messages,
+                        pendingAction = voice.pendingAction,
+                        voiceSpeed = voice.voiceSpeed,
+                        diagnostics = voice.diagnostics
+                    )
+                }
+            }
+        }
     }
 
     fun navigateTo(screen: GravityScreen) {
-        if (screen == GravityScreen.SETUP) refreshStorageStatus()
+        if (screen == GravityScreen.SETUP) {
+            refreshStorageStatus()
+            GravityVoiceHub.refreshDiagnosticsOnly()
+        }
         _uiState.update { it.copy(currentScreen = screen) }
     }
 
@@ -80,22 +82,25 @@ class GravityViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(inputText = text) }
     }
 
-    fun toggleListeningPreview() {
-        val current = _uiState.value.orbState
-        if (current == OrbState.LISTENING) {
-            _uiState.update {
-                it.copy(
-                    orbState = OrbState.IDLE,
-                    statusSubtitle = "Hello • Offline Core Ready"
-                )
-            }
+    fun onOrbTap() {
+        val app = getApplication<Application>()
+        if (_uiState.value.orbState == OrbState.SPEAKING) {
+            GravityVoiceHub.interruptSpeech()
+            return
+        }
+        if (_uiState.value.isWakeServiceRunning) {
+            GravityVoiceService.triggerListenNow(app)
         } else {
-            _uiState.update {
-                it.copy(
-                    orbState = OrbState.LISTENING,
-                    statusSubtitle = "Listening • Step 3 me Offline Voice active hogi"
-                )
-            }
+            GravityVoiceHub.triggerSingleShotListen(app)
+        }
+    }
+
+    fun toggleWakeWordService() {
+        val app = getApplication<Application>()
+        if (_uiState.value.isWakeServiceRunning) {
+            GravityVoiceService.stop(app)
+        } else {
+            GravityVoiceService.start(app)
         }
     }
 
@@ -103,65 +108,29 @@ class GravityViewModel(application: Application) : AndroidViewModel(application)
         val text = (overrideText ?: _uiState.value.inputText).trim()
         if (text.isEmpty()) return
 
-        val activePending = _uiState.value.pendingAction
-        _uiState.update {
-            it.copy(
-                inputText = "",
-                orbState = OrbState.THINKING,
-                statusSubtitle = "Processing command...",
-                messages = it.messages + ChatMessage(text = text, isUser = true)
-            )
-        }
-
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                commandRouter.processCommand(text, activePending)
-            }
-
-            _uiState.update {
-                it.copy(
-                    orbState = OrbState.SPEAKING,
-                    statusSubtitle = "GRAVITY OS",
-                    latestReply = result.reply,
-                    pendingAction = result.pendingAction,
-                    messages = it.messages + ChatMessage(text = result.reply, isUser = false)
-                )
-            }
-
-            // Step 3 me yahan Sherpa-ONNX Local Neural Voice play hogi (No Android default TTS)
-            delay(1600)
-            _uiState.update { state ->
-                if (state.orbState == OrbState.SPEAKING) {
-                    state.copy(orbState = OrbState.IDLE)
-                } else state
-            }
-        }
+        _uiState.update { it.copy(inputText = "") }
+        GravityVoiceHub.launchTypedCommand(getApplication(), text)
     }
 
     fun cancelPendingAction() {
-        _uiState.update {
-            it.copy(
-                pendingAction = null,
-                latestReply = "Cancel kar diya gaya.",
-                orbState = OrbState.IDLE
-            )
-        }
+        GravityVoiceHub.cancelPendingAction()
     }
 
     fun clearChat() {
-        _uiState.update {
-            it.copy(
-                messages = listOf(
-                    ChatMessage(
-                        text = "Nayi conversation shuru ho gayi hai. Boliye kya karna hai?",
-                        isUser = false
-                    )
-                ),
-                latestReply = null,
-                pendingAction = null,
-                orbState = OrbState.IDLE
-            )
-        }
+        GravityVoiceHub.clearChat()
+    }
+
+    fun setVoiceSpeed(speed: Float) {
+        GravityVoiceHub.setVoiceSpeed(speed)
+    }
+
+    fun reloadOfflineModels() {
+        GravityVoiceHub.reloadAllOfflineModels(getApplication())
+        refreshStorageStatus()
+    }
+
+    fun testNeuralVoice() {
+        GravityVoiceHub.testNeuralVoice(getApplication())
     }
 
     fun createModelFolders() {
