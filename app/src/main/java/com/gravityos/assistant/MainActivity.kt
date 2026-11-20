@@ -68,11 +68,11 @@ class MainActivity : ComponentActivity() {
                     refreshTick++
                 }
 
-                val permissions = remember(refreshTick) {
+                val permissions: PermissionSnapshot = remember(refreshTick) {
                     buildPermissionSnapshot()
                 }
 
-                val requestCorePermissions = {
+                val requestCorePermissions: () -> Unit = {
                     val needed = mutableListOf(
                         Manifest.permission.RECORD_AUDIO,
                         Manifest.permission.READ_CONTACTS,
@@ -88,43 +88,33 @@ class MainActivity : ComponentActivity() {
                 GravityRootHost(
                     uiState = uiState,
                     permissions = permissions,
-                    onNavigate = vm::navigateTo,
-                    onInputChange = vm::onInputChange,
-                    onSubmit = vm::submitCommand,
+                    onNavigate = { vm.navigateTo(it) },
+                    onInputChange = { vm.onInputChange(it) },
+                    onSubmit = { vm.submitCommand(it) },
                     onOrbTap = {
-                        if (isGranted(Manifest.permission.RECORD_AUDIO)) {
-                            vm.onOrbTap()
-                        } else {
-                            requestCorePermissions()
-                        }
+                        if (isGranted(Manifest.permission.RECORD_AUDIO)) vm.onOrbTap()
+                        else requestCorePermissions()
                     },
                     onToggleWakeWord = {
-                        if (isGranted(Manifest.permission.RECORD_AUDIO)) {
-                            vm.toggleWakeWordService()
-                        } else {
-                            requestCorePermissions()
-                        }
+                        if (isGranted(Manifest.permission.RECORD_AUDIO)) vm.toggleWakeWordService()
+                        else requestCorePermissions()
                     },
-                    onCancelPending = vm::cancelPendingAction,
-                    onClearChat = vm::clearChat,
-                    onSetVoiceSpeed = vm::setVoiceSpeed,
-                    onReloadOfflineModels = vm::reloadOfflineModels,
-                    onTestNeuralVoice = vm::testNeuralVoice,
+                    onCancelPending = { vm.cancelPendingAction() },
+                    onClearChat = { vm.clearChat() },
+                    onSetVoiceSpeed = { vm.setVoiceSpeed(it) },
+                    onReloadOfflineModels = { vm.reloadOfflineModels() },
+                    onTestNeuralVoice = { vm.testNeuralVoice() },
                     onRequestRuntimePermissions = requestCorePermissions,
                     onRequestOverlayPermission = {
-                        val intent = Intent(
-                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            Uri.parse("package:$packageName")
+                        startActivity(
+                            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
                         )
-                        startActivity(intent)
                     },
                     onRequestBatteryOptimization = {
                         try {
-                            val intent = Intent(
-                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                                Uri.parse("package:$packageName")
+                            startActivity(
+                                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
                             )
-                            startActivity(intent)
                         } catch (_: Exception) {
                             startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                         }
@@ -135,11 +125,9 @@ class MainActivity : ComponentActivity() {
                     onRequestStoragePermission = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                             try {
-                                val intent = Intent(
-                                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                                    Uri.parse("package:$packageName")
+                                startActivity(
+                                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))
                                 )
-                                startActivity(intent)
                             } catch (_: Exception) {
                                 startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
                             }
@@ -152,6 +140,26 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    private fun buildPermissionSnapshot(): PermissionSnapshot {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val storageOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            true
+        }
+
+        return PermissionSnapshot(
+            micGranted = isGranted(Manifest.permission.RECORD_AUDIO),
+            contactsGranted = isGranted(Manifest.permission.READ_CONTACTS),
+            callGranted = isGranted(Manifest.permission.CALL_PHONE),
+            cameraGranted = isGranted(Manifest.permission.CAMERA),
+            overlayGranted = Settings.canDrawOverlays(this),
+            batteryUnrestricted = pm.isIgnoringBatteryOptimizations(packageName),
+            accessibilityGranted = isAccessibilityEnabled(),
+            storageGranted = storageOk
+        )
     }
 
     private fun isAccessibilityEnabled(): Boolean {
