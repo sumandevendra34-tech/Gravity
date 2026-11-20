@@ -11,6 +11,11 @@ data class CommandResult(
     val pendingAction: PendingAction? = null
 )
 
+private data class TypeRequest(
+    val text: String,
+    val submitAfter: Boolean
+)
+
 class CommandRouter(
     private val contactCallManager: ContactCallManager,
     private val appLauncherManager: AppLauncherManager,
@@ -18,17 +23,24 @@ class CommandRouter(
 ) {
 
     fun processCommand(rawInput: String, pendingAction: PendingAction?): CommandResult {
-        val transliterated = if (HindiTransliterator.containsDevanagari(rawInput)) {
-            HindiTransliterator.transliterate(rawInput)
+        val rawWithoutWake = rawInput
+            .trim()
+            .replace(
+                Regex(
+                    "^(hey\\s+gravity|ok\\s+gravity|gravity|हे\\s+ग्रैविटी|ओके\\s+ग्रैविटी|ग्रैविटी|ग्रेविटी)[,\\s]*",
+                    RegexOption.IGNORE_CASE
+                ),
+                ""
+            )
+            .trim()
+
+        val transliterated = if (HindiTransliterator.containsDevanagari(rawWithoutWake)) {
+            HindiTransliterator.transliterate(rawWithoutWake)
         } else {
-            rawInput
+            rawWithoutWake
         }
 
-        val cleaned = transliterated
-            .trim()
-            .replace(Regex("^(hey\\s+gravity|ok\\s+gravity|gravity)[,\\s]*", RegexOption.IGNORE_CASE), "")
-            .trim()
-
+        val cleaned = transliterated.trim()
         if (cleaned.isEmpty()) {
             return CommandResult("Boliye, main sun raha hoon.")
         }
@@ -41,7 +53,51 @@ class CommandRouter(
 
         val lower = cleaned.lowercase()
 
-        // 2. Torch / Flashlight commands
+        // 2. Offline Voice Typing Anywhere (runs BEFORE app/call so "type open youtube" types it!)
+        val typeRequest = extractTypeRequest(rawWithoutWake)
+        if (typeRequest != null) {
+            return when (val res = GravityAccessibilityService.typeText(typeRequest.text, typeRequest.submitAfter)) {
+                is TypingResult.Success -> {
+                    if (res.submitted) {
+                        CommandResult("\"${res.typedText}\" type karke submit kar diya hai.")
+                    } else {
+                        CommandResult("\"${res.typedText}\" type kar diya hai.")
+                    }
+                }
+                is TypingResult.ServiceNotEnabled ->
+                    CommandResult("Voice typing ke liye Setup me jakar Accessibility service ON karein.")
+                is TypingResult.NoInputFieldFound ->
+                    CommandResult("Screen par koi typing box open nahi mila. Pehle Google, WhatsApp ya kisi input box par tap karein.")
+                is TypingResult.Failed ->
+                    CommandResult(res.reason)
+            }
+        }
+
+        // 2B. Clear active typing box
+        if (lower in listOf("clear text", "text clear", "text clear karo", "text mitao", "sab mitao", "delete all text")) {
+            return when (val res = GravityAccessibilityService.clearActiveText()) {
+                is TypingResult.Success -> CommandResult("Text box clear kar diya hai.")
+                is TypingResult.ServiceNotEnabled ->
+                    CommandResult("Iske liye Setup me jakar Accessibility service ON karein.")
+                is TypingResult.NoInputFieldFound ->
+                    CommandResult("Screen par koi active text box nahi mila.")
+                is TypingResult.Failed -> CommandResult(res.reason)
+            }
+        }
+
+        // 2C. Press Search / Send / Enter on active field
+        if (lower in listOf("search karo", "send karo", "enter dabao", "press enter", "hit enter", "bhej do")) {
+            return when (val res = GravityAccessibilityService.pressEnterOrSend()) {
+                is TypingResult.Success -> CommandResult("Done.")
+                is TypingResult.ServiceNotEnabled ->
+                    CommandResult("Iske liye Setup me jakar Accessibility service ON karein.")
+                is TypingResult.NoInputFieldFound ->
+                    CommandResult("Screen par koi active box nahi mila.")
+                is TypingResult.Failed -> CommandResult(res.reason)
+            }
+        }
+
+        // 3. Torch / Flashlight commands
         if (lower.contains("torch") || lower.contains("flashlight") || lower.contains("flash light")) {
             return when {
                 lower.contains("band") || lower.contains("off") || lower.contains("close") ->
@@ -52,7 +108,7 @@ class CommandRouter(
             }
         }
 
-        // 3. Volume commands
+        // 4. Volume commands
         if (lower.contains("volume") || lower.contains("awaz") || lower.contains("aawaz") || lower.contains("sound")) {
             return when {
                 lower.contains("mute") || lower.contains("band") || lower.contains("silent") ->
@@ -65,7 +121,7 @@ class CommandRouter(
             }
         }
 
-        // 4. System Settings shortcuts
+        // 5. System Settings shortcuts
         if (lower.contains("hotspot") || lower.contains("tether")) {
             return CommandResult(phoneControlManager.openHotspotSettings())
         }
@@ -79,12 +135,12 @@ class CommandRouter(
             return CommandResult(phoneControlManager.openDisplaySettings())
         }
 
-        // 5. Camera command
+        // 6. Camera command
         if (lower == "camera" || lower.contains("camera kholo") || lower.contains("open camera") || lower.contains("camera open")) {
             return CommandResult(phoneControlManager.openCamera())
         }
 
-        // 6. Direct Call commands
+        // 7. Direct Call commands
         val callTarget = extractCallTarget(cleaned)
         if (callTarget != null) {
             return when (val res = contactCallManager.resolveAndCall(callTarget)) {
@@ -99,7 +155,7 @@ class CommandRouter(
             }
         }
 
-        // 7. App Opening commands (All System + Play Store apps)
+        // 8. App Opening commands (All System + Play Store apps)
         val appTarget = extractAppTarget(cleaned)
         if (appTarget != null) {
             if (appTarget.equals("settings", ignoreCase = true) || appTarget.equals("setting", ignoreCase = true)) {
@@ -115,11 +171,43 @@ class CommandRouter(
             }
         }
 
-        // 8. Conversational query (Step 4 me Groq/Gemini Online AI + Offline Local LLM yahan connect hoga)
+        // 9. Conversational query (Step 4 me Groq/Gemini Online AI + Offline Local LLM yahan connect hoga)
         return CommandResult(
-            reply = "Aapne kaha: \"$rawInput\". Phone commands aur voice active hain; AI chat brain (Groq, Gemini aur Offline LLM) Step 4 me judega.",
+            reply = "Aapne kaha: \"$rawInput\". Phone commands, voice typing aur voice engine active hain; AI chat brain (Groq, Gemini aur Offline LLM) Step 4 me judega.",
             handledLocally = false
         )
+    }
+
+    private fun extractTypeRequest(rawWithoutWake: String): TypeRequest? {
+        val prefixRegex = Regex(
+            "^(?:type\\s+karo|type\\s+kar\\s+do|type|write\\s+karo|write|likho|likh\\s+do|टाइप\\s+करो|टाइप\\s+कर\\s+दो|टाइप|लिखो|लिख\\s+दो)[:.,\\s]+(.+)$",
+            RegexOption.IGNORE_CASE
+        )
+        val suffixRegex = Regex(
+            "^(.+?)\\s+(?:type\\s+karo|type\\s+kar\\s+do|likh\\s+do|likho|टाइप\\s+करो|टाइप\\s+कर\\s+दो|लिखो|लिख\\s+दो)$",
+            RegexOption.IGNORE_CASE
+        )
+
+        var payload = prefixRegex.find(rawWithoutWake)?.groupValues?.get(1)?.trim()
+            ?: suffixRegex.find(rawWithoutWake)?.groupValues?.get(1)?.trim()
+            ?: return null
+
+        if (payload.isEmpty()) return null
+
+        val submitSuffix = Regex(
+            "\\s+(?:and\\s+search|aur\\s+search\\s+karo|and\\s+send|aur\\s+send\\s+karo|and\\s+enter|aur\\s+enter|और\\s+सर्च\\s+करो|और\\s+सेंड\\s+करो)$",
+            RegexOption.IGNORE_CASE
+        )
+        val shouldSubmit = submitSuffix.containsMatchIn(payload)
+        if (shouldSubmit) {
+            payload = payload.replace(submitSuffix, "").trim()
+        }
+
+        return if (payload.isNotEmpty()) {
+            TypeRequest(text = payload, submitAfter = shouldSubmit)
+        } else {
+            null
+        }
     }
 
     private fun handlePendingConfirmation(input: String, pending: PendingAction): CommandResult? {
