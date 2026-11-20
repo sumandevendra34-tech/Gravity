@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Soft Ambient Blue Halo -->
+    <path android:pathData="M54,18 A36,36 0 1,0 54,90 A36,36 0 1,0 54,18 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="54"
+                android:centerY="54"
+                android:gradientRadius="36"
+                android:type="radial">
+                <item android:color="#6638BDF8" android:offset="0.55" />
+                <item android:color="#222563EB" android:offset="0.80" />
+                <item android:color="#0002050C" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Main Deep Dark-Core Luminous Sphere -->
+    <path android:pathData="M54,26 A28,28 0 1,0 54,82 A28,28 0 1,0 54,26 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:centerX="47"
+                android:centerY="46"
+                android:gradientRadius="32"
+                android:type="radial">
+                <item android:color="#040A18" android:offset="0.0" />
+                <item android:color="#0A1B3D" android:offset="0.52" />
+                <item android:color="#1D4ED8" android:offset="0.82" />
+                <item android:color="#60A5FA" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Lower-Right Plasma Energy Swirl Ribbon -->
+    <path android:pathData="M34,71 C43,60 60,57 73,52 C79,50 81,58 76,68 C69,79 52,83 39,77 C34,75 31,74 34,71 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:endX="78"
+                android:endY="52"
+                android:startX="34"
+                android:startY="78"
+                android:type="linear">
+                <item android:color="#CC7C3AED" android:offset="0.0" />
+                <item android:color="#EE38BDF8" android:offset="0.55" />
+                <item android:color="#FFFFFFFF" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Upper-Right Glowing Cyan Rim Arc -->
+    <path
+        android:pathData="M42,29 C57,24 75,33 79,48 C81,55 79,63 74,69"
+        android:strokeLineCap="round"
+        android:strokeWidth="3.2">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:endX="76"
+                android:endY="69"
+                android:startX="42"
+                android:startY="28"
+                android:type="linear">
+                <item android:color="#3338BDF8" android:offset="0.0" />
+                <item android:color="#FF7DD3FC" android:offset="0.5" />
+                <item android:color="#FFFFFFFF" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Lower-Left Violet-Blue Rim Reflection -->
+    <path
+        android:pathData="M30,45 C26,59 33,74 47,79 C55,82 65,80 71,74"
+        android:strokeLineCap="round"
+        android:strokeWidth="2.0">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:endX="71"
+                android:endY="74"
+                android:startX="29"
+                android:startY="45"
+                android:type="linear">
+                <item android:color="#2260A5FA" android:offset="0.0" />
+                <item android:color="#CC8B5CF6" android:offset="0.55" />
+                <item android:color="#EE38BDF8" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>
