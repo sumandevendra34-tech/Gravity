@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.GravityOS" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#03060E</item>
+        <item name="android:navigationBarColor">#03060E</item>
+        <item name="android:windowBackground">#03060E</item>
+    </style>
+</resources>
